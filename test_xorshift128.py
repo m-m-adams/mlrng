@@ -126,10 +126,10 @@ def validate(model, loader, device, criterion=nn.BCELoss()):
         for data in loader:
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = torch.round(model(inputs))
+            outputs = model(inputs)
             loss = criterion(outputs, labels)
             val_loss += loss.cpu().numpy()
-            correct += (outputs == labels).sum().item()
+            correct += (torch.round(outputs) == labels).sum().item()
             val_steps += 1
             total += labels.size(0)*labels.size(1)
     return ((val_loss / val_steps), correct / total)
@@ -236,7 +236,7 @@ def train_complete(config, train_dataset, epochs):
         loss, accuracy = validate(
             model, val_loader, device, criterion=criterion)
 
-        if loss > last_loss:
+        if loss > last_loss or accuracy > 0.99999:
             return model
         last_loss = loss
 
@@ -251,7 +251,7 @@ def main():
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data()
+    raw_rng = gen_data(n=10_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
