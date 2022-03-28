@@ -5,6 +5,7 @@ import sched
 import numpy as np
 import os
 import sys
+import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -89,7 +90,7 @@ class Net(nn.Module):
         return torch.sigmoid(self.output(x))
 
 
-def train(model, optimizer, loader, device, criterion=torch.nn.BCELoss(), progress=False):
+def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCELoss(), progress=False):
     # train a single epoch
     running_loss = 0
     for i, data in enumerate(loader, 0):
@@ -135,7 +136,7 @@ def validate(model, loader, device, criterion=nn.BCELoss()):
     return ((val_loss / val_steps), correct / total)
 
 
-def train_tune(config, train_dataset=None, checkpoint_dir=None):
+def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning=False):
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda:0"
@@ -153,23 +154,27 @@ def train_tune(config, train_dataset=None, checkpoint_dir=None):
         betas=(config["beta1"], config["beta2"]))
     criterion = torch.nn.BCELoss()
 
-    if checkpoint_dir:
+    if tuning and checkpoint_dir:
         model_state, optimizer_state = torch.load(
             os.path.join(checkpoint_dir, "checkpoint"))
         model.load_state_dict(model_state)
         optimizer.load_state_dict(optimizer_state)
 
-    for epoch in range(5):
-        train(model, optimizer, train_loader, device,
-              criterion=criterion)
+    for epoch in range(epochs):
+        train_single_epoch(model, optimizer, train_loader, device,
+                           criterion=criterion, progress=not tuning)
 
         loss, accuracy = validate(
             model, val_loader, device, criterion=criterion)
-
-        with tune.checkpoint_dir(epoch) as checkpoint_dir:
-            path = os.path.join(checkpoint_dir, "checkpoint")
+        if tuning:
+            with tune.checkpoint_dir(epoch) as checkpoint_dir:
+                path = os.path.join(checkpoint_dir, "checkpoint")
+                torch.save((model.state_dict(), optimizer.state_dict()), path)
+            tune.report(loss=loss, accuracy=accuracy)
+        else:
+            path = os.path.join("checkpoints", 'epoch'+str(epoch))
+            print(f"finished epoch {epoch} with accuracy {accuracy}")
             torch.save((model.state_dict(), optimizer.state_dict()), path)
-        tune.report(loss=loss, accuracy=accuracy)
 
 
 def tune(train_dataset):
@@ -193,7 +198,7 @@ def tune(train_dataset):
     search = BayesOptSearch(metric="accuracy", mode="max")
 
     print("starting ray tune")
-    analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset),
+    analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset, tuning=True),
                         config=search_space,
                         num_samples=50,
                         resources_per_trial={"gpu": 0.5},
@@ -211,42 +216,10 @@ def tune(train_dataset):
     return best_trial.config
 
 
-def train_complete(config, train_dataset, epochs):
+def main(args):
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda:0"
-
-    test_abs = int(len(train_dataset) * 0.8)
-    train_subset, val_subset = random_split(
-        train_dataset, [test_abs, len(train_dataset) - test_abs])
-    train_loader = DataLoader(train_subset, batch_size=10000)
-    val_loader = DataLoader(val_subset, batch_size=10000)
-
-    model = Net(1024).to(device)
-
-    optimizer = torch.optim.NAdam(
-        model.parameters(), lr=config["lr"], eps=config["eps"],
-        betas=(config["beta1"], config["beta2"]))
-    criterion = torch.nn.BCELoss()
-    last_loss = 1
-    for epoch in range(epochs):
-        train(model, optimizer, train_loader, device,
-              criterion=criterion, progress=True)
-
-        loss, accuracy = validate(
-            model, val_loader, device, criterion=criterion)
-
-        if loss > last_loss or accuracy > 0.99999:
-            return model
-        last_loss = loss
-
-        path = os.path.join("checkpoints", 'epoch'+str(epoch))
-        print(f"finished epoch {epoch} with accuracy {accuracy}")
-        torch.save((model.state_dict(), optimizer.state_dict()), path)
-    return model
-
-
-def main():
     # per RFC 1149.5
     myrand = 4
     np.random.seed(myrand)
@@ -257,16 +230,27 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=10000)
     best_conf = {'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
-    if sys.argv[-1] == "tune":
+    if args.tune:
         print("tuning")
         best_conf = tune(train_dataset)
 
-    model = train_complete(best_conf, train_dataset, 50)
-    torch.save(model, "trained_model.pt")
-
-    results = validate(model, test_loader, "cuda")
-    print(results)
+    if args.validate:
+        print("loading and validating")
+        model = Net(1024).to(device)
+        model.load_state_dict(torch.load("trained_model.state"))
+        results = validate(model, test_loader, "cuda")
+        print(results)
+    else:
+        print("training")
+        model = train_tune(best_conf, train_dataset, epochs=50)
+        torch.save(model.state_dict(), "trained_model.state")
+        results = validate(model, test_loader, "cuda")
+        print(results)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='train NN to break xorshift')
+    parser.add_argument("--tune", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--validate", action=argparse.BooleanOptionalAction)
+    args = parser.parse_args()
+    main(args)
