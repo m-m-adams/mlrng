@@ -6,6 +6,7 @@ attrs==21.2.0
 autopep8 @ file:///tmp/build/80754af9/autopep8_1620866417880/work
 backcall==0.2.0
 base32-crockford==0.3.0
+bayesian-optimization==1.2.0
 bitstring==3.1.9
 Bottleneck @ file:///tmp/build/80754af9/bottleneck_1607575130224/work
 brotlipy==0.7.0
@@ -41,6 +42,7 @@ h5py==3.5.0
 halo==0.0.31
 hid==1.0.4
 hjson==3.0.2
+hyperopt==0.2.7
 idna==3.3
 ipykernel @ file:///home/conda/feedstock_root/build_artifacts/ipykernel_1636998260747/work/dist/ipykernel-6.5.0-py3-none-any.whl
 ipython==7.29.0
@@ -66,6 +68,7 @@ msgpack==1.0.3
 munkres==1.1.4
 Naked==0.1.31
 nest-asyncio @ file:///home/conda/feedstock_root/build_artifacts/nest-asyncio_1617163391303/work
+networkx==2.7.1
 numexpr @ file:///tmp/build/80754af9/numexpr_1618856529730/work
 numpy==1.21.4
 oauthlib==3.1.1
@@ -80,6 +83,7 @@ Pillow==8.4.0
 prompt-toolkit==3.0.22
 protobuf==3.19.1
 ptyprocess==0.7.0
+py4j==0.10.9.5
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
 pycipher==0.5.2
