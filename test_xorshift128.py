@@ -1,18 +1,13 @@
 # %%
 # from functools import partial
 from cgi import test
-import sched
 import numpy as np
 import os
-import sys
 import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import random_split, TensorDataset, DataLoader
-import torchvision
-import torchvision.transforms as transforms
 from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
@@ -55,7 +50,7 @@ def bit_array(arr_in):
     return bits_out
 
 
-def gen_data(n=2_000_000):
+def gen_data(n=1_000_000):
     rng = xorshift128()
     # generate 2 000 000 random numbers
     inputs = np.array([rng() for _ in range(n)])
@@ -167,17 +162,17 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
         loss, accuracy = validate(
             model, val_loader, device, criterion=criterion)
         if tuning:
-            with tune.checkpoint_dir(epoch) as checkpoint_dir:
+            with tune_model.checkpoint_dir(epoch) as checkpoint_dir:
                 path = os.path.join(checkpoint_dir, "checkpoint")
                 torch.save((model.state_dict(), optimizer.state_dict()), path)
-            tune.report(loss=loss, accuracy=accuracy)
+            tune_model.report(loss=loss, accuracy=accuracy)
         else:
             path = os.path.join("checkpoints", 'epoch'+str(epoch))
             print(f"finished epoch {epoch} with accuracy {accuracy}")
             torch.save((model.state_dict(), optimizer.state_dict()), path)
 
 
-def tune(train_dataset):
+def tune_model(train_dataset):
     search_space = {
         "lr": tune.loguniform(1e-5, 1e-3),
         "eps": tune.loguniform(1e-7, 1e-5),
@@ -201,7 +196,7 @@ def tune(train_dataset):
     analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset, tuning=True),
                         config=search_space,
                         num_samples=50,
-                        resources_per_trial={"gpu": 0.5},
+                        resources_per_trial={"gpu": 1},
                         progress_reporter=reporter,
                         scheduler=scheduler,
                         search_alg=search
@@ -232,7 +227,7 @@ def main(args):
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
-        best_conf = tune(train_dataset)
+        best_conf = tune_model(train_dataset)
 
     if args.validate:
         print("loading and validating")
