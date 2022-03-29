@@ -201,8 +201,8 @@ def tune_model(train_dataset):
     print("starting ray tune")
     analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset, tuning=True),
                         config=search_space,
-                        num_samples=50,
-                        resources_per_trial={"gpu": 0.5},
+                        num_samples=200,
+                        resources_per_trial={"gpu": 1},
                         progress_reporter=reporter,
                         scheduler=scheduler,
                         search_alg=search
@@ -225,7 +225,7 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=1_000_000)
+    raw_rng = gen_data(n=10_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
@@ -234,6 +234,8 @@ def main(args):
     if args.tune:
         print("tuning")
         best_conf = tune_model(train_dataset)
+        with open("best_config.txt", "w") as f:
+            f.write("Best trial config: {}".format(best_conf))
 
     if args.validate:
         print("loading and validating")
