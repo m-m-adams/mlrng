@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
-from ray.tune.suggest.bayesopt import BayesOptSearch
+from ray.tune.suggest.optuna import OptunaSearch
 
 
 def xorshift128():
@@ -147,7 +147,7 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
     train_loader = DataLoader(train_subset, batch_size=10000)
     val_loader = DataLoader(val_subset, batch_size=10000)
 
-    model = Net(1024).to(device)
+    model = Net(config["hidden"]).to(device)
 
     optimizer = torch.optim.NAdam(
         model.parameters(), lr=config["lr"], eps=config["eps"],
@@ -177,8 +177,9 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
             torch.save((model.state_dict(), optimizer.state_dict()), path)
 
 
-def tune(train_dataset):
+def tune_model(train_dataset):
     search_space = {
+        "hidden": tune.randint(512, 2048),
         "lr": tune.loguniform(1e-5, 1e-3),
         "eps": tune.loguniform(1e-7, 1e-5),
         "beta1": tune.uniform(0.8, 0.9),
@@ -195,7 +196,7 @@ def tune(train_dataset):
         grace_period=1,
         reduction_factor=2)
 
-    search = BayesOptSearch(metric="accuracy", mode="max")
+    search = OptunaSearch(metric="accuracy", mode="max")
 
     print("starting ray tune")
     analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset, tuning=True),
@@ -224,7 +225,7 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=10_000_000)
+    raw_rng = gen_data(n=1_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
@@ -232,7 +233,7 @@ def main(args):
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
-        best_conf = tune(train_dataset)
+        best_conf = tune_model(train_dataset)
 
     if args.validate:
         print("loading and validating")
