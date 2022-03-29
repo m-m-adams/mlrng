@@ -1,17 +1,22 @@
 # %%
 # from functools import partial
 from cgi import test
+import sched
 import numpy as np
 import os
+import sys
 import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.utils.data import random_split, TensorDataset, DataLoader
+import torchvision
+import torchvision.transforms as transforms
 from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
-from ray.tune.suggest.bayesopt import BayesOptSearch
+from ray.tune.suggest.optuna import OptunaSearch
 
 
 def xorshift128():
@@ -50,12 +55,12 @@ def bit_array(arr_in):
     return bits_out
 
 
-def gen_data(n=1_000_000):
+def gen_data(n=2_000_000):
     rng = xorshift128()
     # generate 2 000 000 random numbers
     inputs = np.array([rng() for _ in range(n)])
     rand_bits = bit_array(inputs)
-    return strided(rand_bits, 5)
+    return strided(rand_bits, 2)
 
 
 def preprocess(raw_rng):
@@ -76,12 +81,12 @@ def preprocess(raw_rng):
 class Net(nn.Module):
     def __init__(self, hidden=1024):
         super().__init__()
-        self.input = torch.nn.Linear(128, hidden)
-
+        self.rnn = torch.nn.LSTM(32, hidden)
         self.output = torch.nn.Linear(hidden, 32)
 
     def forward(self, x):
-        x = F.relu(self.input(x))
+        lstm_out, _ = self.rnn(x)
+        x = F.relu(lstm_out)
         return torch.sigmoid(self.output(x))
 
 
@@ -142,7 +147,7 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
     train_loader = DataLoader(train_subset, batch_size=10000)
     val_loader = DataLoader(val_subset, batch_size=10000)
 
-    model = Net(1024).to(device)
+    model = Net(config["hidden"]).to(device)
 
     optimizer = torch.optim.NAdam(
         model.parameters(), lr=config["lr"], eps=config["eps"],
@@ -162,10 +167,10 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
         loss, accuracy = validate(
             model, val_loader, device, criterion=criterion)
         if tuning:
-            with tune_model.checkpoint_dir(epoch) as checkpoint_dir:
+            with tune.checkpoint_dir(epoch) as checkpoint_dir:
                 path = os.path.join(checkpoint_dir, "checkpoint")
                 torch.save((model.state_dict(), optimizer.state_dict()), path)
-            tune_model.report(loss=loss, accuracy=accuracy)
+            tune.report(loss=loss, accuracy=accuracy)
         else:
             path = os.path.join("checkpoints", 'epoch'+str(epoch))
             print(f"finished epoch {epoch} with accuracy {accuracy}")
@@ -174,6 +179,7 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
 
 def tune_model(train_dataset):
     search_space = {
+        "hidden": tune.randint(512, 2048),
         "lr": tune.loguniform(1e-5, 1e-3),
         "eps": tune.loguniform(1e-7, 1e-5),
         "beta1": tune.uniform(0.8, 0.9),
@@ -190,12 +196,12 @@ def tune_model(train_dataset):
         grace_period=1,
         reduction_factor=2)
 
-    search = BayesOptSearch(metric="accuracy", mode="max")
+    search = OptunaSearch(metric="accuracy", mode="max")
 
     print("starting ray tune")
     analysis = tune.run(tune.with_parameters(train_tune, train_dataset=train_dataset, tuning=True),
                         config=search_space,
-                        num_samples=50,
+                        num_samples=200,
                         resources_per_trial={"gpu": 1},
                         progress_reporter=reporter,
                         scheduler=scheduler,
@@ -219,15 +225,17 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=10_000_000)
+    raw_rng = gen_data(n=1_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
-    best_conf = {'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
+    best_conf = {'hidden': 256, 'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
         best_conf = tune_model(train_dataset)
+        with open("best_config.txt", "w") as f:
+            f.write("Best trial config: {}".format(best_conf))
 
     if args.validate:
         print("loading and validating")
