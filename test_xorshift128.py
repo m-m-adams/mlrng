@@ -85,9 +85,14 @@ class Net(nn.Module):
         self.output = torch.nn.Linear(hidden, 32)
 
     def forward(self, x):
+
+        #print(f"x is shaped as {x.shape}")
+        #print(f"x[0] is {x[0]}")
+        # print(x.shape)
         lstm_out, _ = self.rnn(x)
-        x = F.relu(lstm_out)
-        return torch.sigmoid(self.output(x))
+        out = torch.sigmoid(self.output(lstm_out))
+        # print(out.shape)
+        return out
 
 
 def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCELoss(), progress=False):
@@ -97,7 +102,8 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
 
         # get the inputs; data is a list of [inputs, labels]
         inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs, labels = inputs[:, None, :].to(
+            device), labels[:, None, :].to(device)
 
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -144,8 +150,8 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
     test_abs = int(len(train_dataset) * 0.8)
     train_subset, val_subset = random_split(
         train_dataset, [test_abs, len(train_dataset) - test_abs])
-    train_loader = DataLoader(train_subset, batch_size=10000)
-    val_loader = DataLoader(val_subset, batch_size=10000)
+    train_loader = DataLoader(train_subset, batch_size=1000)
+    val_loader = DataLoader(val_subset, batch_size=1000)
 
     model = Net(config["hidden"]).to(device)
 
@@ -179,7 +185,7 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
 
 def tune_model(train_dataset):
     search_space = {
-        "hidden": tune.randint(512, 2048),
+        "hidden": tune.randint(32, 512),
         "lr": tune.loguniform(1e-5, 1e-3),
         "eps": tune.loguniform(1e-7, 1e-5),
         "beta1": tune.uniform(0.8, 0.9),
@@ -225,11 +231,11 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=1_000_000)
+    raw_rng = gen_data(n=200_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
-    best_conf = {'hidden': 256, 'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
+    best_conf = {'hidden': 1024, 'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
