@@ -113,6 +113,7 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+        optimizer.zero_grad()
 
         # print statistics
         running_loss += loss.item()
@@ -181,6 +182,7 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
             path = os.path.join("checkpoints", 'epoch'+str(epoch))
             print(f"finished epoch {epoch} with accuracy {accuracy}")
             torch.save((model.state_dict(), optimizer.state_dict()), path)
+    return model
 
 
 def tune_model(train_dataset):
@@ -231,7 +233,7 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=200_000)
+    raw_rng = gen_data(n=2_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
