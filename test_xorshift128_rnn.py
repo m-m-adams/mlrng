@@ -68,7 +68,8 @@ def preprocess(raw_rng):
     x = raw_rng[:, :-1, :]  # first four in every window
     X = x.reshape([x.shape[0], x.shape[1]*x.shape[2]])
 
-    test_count = 100_000
+    test_portion = 0.1
+    test_count = round(test_portion*raw_rng.shape[0])
     X_train = torch.Tensor(X[test_count:])
     X_test = torch.Tensor(X[:test_count])
     y_train = torch.Tensor(y[test_count:])
@@ -111,6 +112,8 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
         # forward + backward + optimize
         outputs = model(inputs)
         loss = criterion(outputs, labels)
+        accuracy = (torch.round(outputs) == labels).sum().sum().item() / \
+            (labels.size(0)*labels.size(2))
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -120,7 +123,7 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
         if (i+1) % 50 == 0:    # print every 50 mini-batches
             if progress:
                 print(
-                    f'[{i + 1:5d}] loss: {running_loss / 50:.3f} processed: {i*len(data[0])}')
+                    f'[{i + 1:5d}] loss: {running_loss / 50:.3f} accuracy: {accuracy}')
             running_loss = 0.0
 
 
@@ -133,17 +136,51 @@ def validate(model, loader, device, criterion=nn.BCELoss()):
     with torch.no_grad():
         for data in loader:
             inputs, labels = data
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs, labels = inputs[:, None, :].to(
+                device), labels[:, None, :].to(device)
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             val_loss += loss.cpu().numpy()
             correct += (torch.round(outputs) == labels).sum().item()
             val_steps += 1
-            total += labels.size(0)*labels.size(1)
+            total += labels.size(0)*labels.size(2)
     return ((val_loss / val_steps), correct / total)
 
 
-def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning=False):
+def bootstrap(config, epochs=50):
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda:0"
+
+    myrand = 4
+    np.random.seed(myrand)
+    torch.manual_seed(myrand)
+    raw_rng = gen_data(n=200_000)
+    train_dataset, val_dataset = preprocess(raw_rng)
+
+    train_loader = DataLoader(train_dataset, batch_size=1000)
+    val_loader = DataLoader(val_dataset, batch_size=1000)
+
+    model = Net(config["hidden"]).to(device)
+
+    optimizer = torch.optim.NAdam(
+        model.parameters(), lr=0.005, eps=config["eps"],
+        betas=(config["beta1"], config["beta2"]))
+    criterion = torch.nn.BCELoss()
+
+    for epoch in range(epochs):
+        train_single_epoch(model, optimizer, train_loader, device,
+                           criterion=criterion, progress=True)
+        loss, accuracy = validate(
+            model, val_loader, device, criterion=criterion)
+        path = os.path.join("checkpoints", 'bootstrap epoch'+str(epoch))
+        print(
+            f"finished epoch {epoch} with loss {loss} and accuracy {accuracy}")
+        torch.save((model.state_dict(), optimizer.state_dict()), path)
+    return model
+
+
+def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning=False, model=None):
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda:0"
@@ -153,8 +190,9 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
         train_dataset, [test_abs, len(train_dataset) - test_abs])
     train_loader = DataLoader(train_subset, batch_size=1000)
     val_loader = DataLoader(val_subset, batch_size=1000)
-
-    model = Net(config["hidden"]).to(device)
+    if not model:
+        print("no model provided")
+        model = Net(config["hidden"]).to(device)
 
     optimizer = torch.optim.NAdam(
         model.parameters(), lr=config["lr"], eps=config["eps"],
@@ -233,11 +271,10 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=2_000_000)
-
+    raw_rng = gen_data(n=1_000_000)
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
-    best_conf = {'hidden': 1024, 'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
+    best_conf = {'hidden': 1024, 'lr': 0.001, 'eps': 4.80867121379225e-07,
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
@@ -252,8 +289,11 @@ def main(args):
         results = validate(model, test_loader, "cuda")
         print(results)
     else:
+        print("bootstrapping")
+        model = bootstrap(best_conf)
         print("training")
-        model = train_tune(best_conf, train_dataset, epochs=50)
+        model = train_tune(best_conf, train_dataset, epochs=50, model=model)
+
         torch.save(model.state_dict(), "trained_model.state")
         results = validate(model, test_loader, "cuda")
         print(results)
