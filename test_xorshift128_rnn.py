@@ -80,9 +80,10 @@ def preprocess(raw_rng):
 
 
 class Net(nn.Module):
-    def __init__(self, hidden=1024):
+    def __init__(self, lstm_out=64, hidden=1024):
         super().__init__()
-        self.rnn = torch.nn.LSTM(32, hidden)
+        self.rnn = torch.nn.LSTM(32, lstm_out)
+        self.hidden = torch.nn.Linear(lstm_out, hidden)
         self.output = torch.nn.Linear(hidden, 32)
 
     def forward(self, x):
@@ -91,7 +92,8 @@ class Net(nn.Module):
         #print(f"x[0] is {x[0]}")
         # print(x.shape)
         lstm_out, _ = self.rnn(x)
-        out = torch.sigmoid(self.output(lstm_out))
+        hid = F.leaky_relu(self.hidden(lstm_out))
+        out = torch.sigmoid(self.output(hid))
         # print(out.shape)
         return out
 
