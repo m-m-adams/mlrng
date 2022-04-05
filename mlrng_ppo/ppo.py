@@ -1,9 +1,10 @@
 import torch
 import numpy as np
 from network import FeedForwardNN
-from torch.distributions import MultivariateNormal
+from torch.distributions import Bernoulli
 from torch.optim import Adam
-from torch import nn
+from torch import log_, nn
+import rng_break_env
 
 
 class PPO:
@@ -55,6 +56,7 @@ class PPO:
                 # Calculate ratios
                 ratios = torch.exp(curr_log_probs - batch_log_probs)
                 # Calculate surrogate losses
+                print(A_k.shape)
                 surr1 = ratios * A_k
                 surr2 = torch.clamp(
                     ratios, 1 - self.clip, 1 + self.clip) * A_k
@@ -106,6 +108,7 @@ class PPO:
         batch_acts = torch.tensor(batch_acts, dtype=torch.float)
         batch_log_probs = torch.tensor(
             batch_log_probs, dtype=torch.float)  # ALG STEP #4
+        print(batch_log_probs.shape)
         batch_rtgs = self.compute_rtgs(batch_rews)  # Return the batch data
         return batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens
 
@@ -114,9 +117,9 @@ class PPO:
         mean = self.actor(obs)
         # Create our Multivariate Normal Distribution
         # Sample an action from the distribution and get its log prob
-        dist = MultivariateNormal(mean, self.cov_mat)
+        dist = Bernoulli(mean)
         action = dist.sample()
-        log_prob = dist.log_prob(action)
+        log_prob = dist.log_prob(action).sum()
 
         # Return the sampled action and the log prob of that action
         # Note that I'm calling detach() since the action and log_prob
@@ -148,13 +151,13 @@ class PPO:
         # recent actor network.
         # This segment of code is similar to that in get_action()
         mean = self.actor(batch_obs)
-        dist = MultivariateNormal(mean, self.cov_mat)
-        log_probs = dist.log_prob(batch_acts)
+        dist = Bernoulli(mean)
+        log_probs = dist.log_prob(batch_acts).sum()
         return V, log_probs
 
 
 if __name__ == "__main__":
-    import gym
-    env = gym.make('Pendulum-v1')
+
+    env = rng_break_env.RNGEnv()
     model = PPO(env)
-    model.learn(10000)
+    model.learn(10_000_000)
