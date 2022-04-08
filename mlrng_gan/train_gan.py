@@ -1,22 +1,19 @@
+# %%
 import math
 import numpy as np
 import torch
 import torch.nn as nn
 from gan_models import Generator, Discriminator
 from gendata import generate_even_data
+from IPython.display import clear_output
+from matplotlib import pyplot as plt
+import seaborn as sns
+%matplotlib inline
 
 
-def train(max_int: int = 128, batch_size: int = 16, training_steps: int = 500):
-    input_length = int(math.log(max_int, 2))
-
-    # Models
-    generator = Generator(input_length)
-    discriminator = Discriminator(input_length)
+def train(max_int: int = 128, batch_size: int = 10_000, training_steps: int = 500):
 
     # Optimizers
-    generator_optimizer = torch.optim.Adam(generator.parameters(), lr=0.001)
-    discriminator_optimizer = torch.optim.Adam(
-        discriminator.parameters(), lr=0.001)
 
     # loss
     loss = nn.BCELoss()
@@ -27,40 +24,71 @@ def train(max_int: int = 128, batch_size: int = 16, training_steps: int = 500):
 
         # Create noisy input for generator
         # Need float type instead of int
-        noise = torch.randint(0, 2, size=(batch_size, input_length)).float()
-        generated_data = generator(noise)
-
-        # Generate examples of even real data
-        true_labels, true_data = generate_even_data(
-            max_int, batch_size=batch_size)
-        true_labels = torch.tensor(true_labels).float()
-        true_data = torch.tensor(true_data).float()
+        seeds = torch.randint(0, 2, size=(batch_size, input_length*4)).float()
+        generated_data = generator(seeds)
 
         # Train the generator
         # We invert the labels here and don't train the discriminator because we want the generator
         # to make things the discriminator classifies as true.
-        generator_discriminator_out = discriminator(generated_data)
-        generator_loss = loss(
-            generator_discriminator_out.squeeze(), true_labels)
+        discriminator_out = discriminator(seeds)
+        generator_loss = loss(torch.round(generated_data),
+                              torch.round(1-discriminator_out.detach()))
         generator_loss.backward()
         generator_optimizer.step()
 
-        # Train the discriminator on the true/generated data
-        discriminator_optimizer.zero_grad()
-        true_discriminator_out = discriminator(true_data)
-        true_discriminator_loss = loss(
-            true_discriminator_out.squeeze(), true_labels)
-
         # add .detach() here think about this
-        generator_discriminator_out = discriminator(generated_data.detach())
-        generator_discriminator_loss = loss(
-            generator_discriminator_out.squeeze(), torch.zeros(batch_size))
-        discriminator_loss = (true_discriminator_loss +
-                              generator_discriminator_loss) / 2
+        discriminator_loss = loss(discriminator_out, generated_data.detach())
         discriminator_loss.backward()
         discriminator_optimizer.step()
-        if i % 100 == 0:
-            print(f"{i}, {generated_data}, {generator_discriminator_out}")
 
+        print(generator_loss.detach(), discriminator_loss.detach(), i)
+        if (i+1) % 100 == 0:
+            live_plot(prepare_output(generated_data, discriminator_out))
+
+
+def prepare_output(generated, discriminated):
+    out = []
+    for g, d in zip(generated, discriminated):
+        g = torch.round(g).detach().numpy()
+        d = torch.round(d).detach().numpy()
+        g_v = sum(x*(2**i) for i, x in enumerate(g))
+        d_v = sum(x*(2**i) for i, x in enumerate(d))
+        out.append([g_v, d_v])
+    return out
+
+# %%
+
+
+def live_plot(x, figsize=(7, 5), title=''):
+    x = np.array(x)[:, 0]
+    clear_output(wait=True)
+    plt.figure(figsize=figsize)
+    plt.hist(x, label='distribution', color='k', bins=128, range=(0, 128))
+
+    plt.title(title)
+    plt.grid(True)
+    plt.xlabel('output number')
+    plt.ylabel('count')
+    plt.show()
+
+
+input_length = int(math.log(128, 2))
+generator = Generator(input_length)
+discriminator = Discriminator(input_length)
+generator_optimizer = torch.optim.Adam(generator.parameters(), lr=0.0005)
+discriminator_optimizer = torch.optim.Adam(
+    discriminator.parameters(), lr=0.0005)
 
 train()
+
+# %%
+n2gen = 10_000
+seeds = torch.randint(0, 2, size=(input_length*4,)).float()
+
+for _ in range(n2gen):
+    next = torch.round(generator(seeds)).detach()
+    seeds = torch.cat((seeds[input_length:], next), 0)
+    n = sum(x*(2**i) for i, x in enumerate(next.detach().numpy()))
+    with open("rngout.txt", 'a') as f:
+        f.write(f"{int(n)}\n")
+# %%
