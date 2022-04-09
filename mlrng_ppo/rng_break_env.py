@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from break_network import Net
-from gym.spaces import Discrete, Box
+from gym.spaces import MultiBinary, Box
 
 import torch
 from torch import nn
@@ -15,11 +15,9 @@ class RNGEnv(gym.Env):
     def __init__(self):
         super().__init__()
         # The action and observation spaces need to be gym.spaces objects:
-        self.action_space = Box(low=0, high=1, shape=(32,),
-                                dtype=np.integer)  # up, left, right, down
+        self.action_space = MultiBinary(32)  # up, left, right, down
         # Here's an observation space for 200 wide x 100 high RGB image inputs:
-        self.observation_space = Box(
-            low=0, high=1, shape=(128,), dtype=np.integer)
+        self.observation_space = MultiBinary(128)
         self.state = np.zeros(128, dtype=np.integer)
         self.network = Net()
         self.criterion = nn.BCELoss()
@@ -50,7 +48,7 @@ class RNGEnv(gym.Env):
         print(f"episode loss for guesser is {self.episode_loss}")
         self.episode_loss = 0
         self.state = np.zeros((128), np.integer)
-        print(*self.outputs, sep="\n")
+        #print(*self.outputs, sep="\n")
         return self.state
 
     def render(self, mode='human', close=False):

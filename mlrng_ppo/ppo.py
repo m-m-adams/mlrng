@@ -119,6 +119,7 @@ class PPO:
         # Sample an action from the distribution and get its log prob
         dist = Bernoulli(mean)
         action = dist.sample()
+        print(f"a is {mean}")
         log_prob = dist.log_prob(action).sum()
 
         # Return the sampled action and the log prob of that action
