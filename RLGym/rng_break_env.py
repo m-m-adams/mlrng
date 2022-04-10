@@ -13,9 +13,11 @@ class RNGEnv(gym.Env):
     def __init__(self):
         super().__init__()
         # The action and observation spaces need to be gym.spaces objects:
-        self.action_space = Discrete(2)  # up, left, right, down
-        self.observation_space = MultiBinary(128)
-        self.state = np.zeros(128, dtype=np.integer)
+        self.action_space = Discrete(2)  # 1 or 0
+        self.observation_space = MultiBinary(
+            128)  # keep last 128 bits as the state
+        self.state = np.random.randint(0, 1, 128, dtype=np.integer)
+        # initialize state to 0
         self.network = Net()
         self.criterion = nn.BCELoss()
         self.episode_loss = 0
@@ -40,8 +42,9 @@ class RNGEnv(gym.Env):
         info = {
             'reward': loss.detach().cpu().numpy()
         }
+        done = len(self.outputs) == 10_000
 
-        return self.state, loss, False, info
+        return self.state, loss.detach().cpu().numpy(), done, info
 
     def learn(self):
         batch_obs = torch.tensor(np.array(self.states), dtype=torch.float)
@@ -56,7 +59,7 @@ class RNGEnv(gym.Env):
             loss.backward()
             self.actor_optim.step()
             self.actor_optim.zero_grad()
-        print(self.outputs[:50])
+        print(f'number of ones {np.sum(out == 1)}')
 
     def reset(self):
 
@@ -65,12 +68,10 @@ class RNGEnv(gym.Env):
         if len(self.states) > 1:
             print(
                 f"episode loss for guesser is {self.episode_loss/len(self.states)}")
-
-            print(len(self.states))
             # replay the episode a couple times for faster learning
             self.learn()
         self.episode_loss = 0
-        self.state = np.zeros((128), np.integer)
+        self.state = np.random.randint(0, 1, 128, dtype=np.integer)
         self.states = []
         self.outputs = []
         # print(*self.outputs, sep="\n")
@@ -78,3 +79,7 @@ class RNGEnv(gym.Env):
 
     def render(self, mode='human', close=False):
         print(self.outputs)
+
+    def save(self, filename):
+        with open(filename, 'w+') as f:
+            f.write(str(self.outputs))
