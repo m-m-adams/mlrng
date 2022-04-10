@@ -28,15 +28,12 @@ def train(max_int: int = 128, batch_size: int = 10_000, training_steps: int = 50
         generated_data = generator(seeds)
 
         # Train the generator
-        # We invert the labels here and don't train the discriminator because we want the generator
-        # to make things the discriminator classifies as true.
         discriminator_out = discriminator(seeds)
         generator_loss = loss(torch.round(generated_data),
                               torch.round(1-discriminator_out.detach()))
         generator_loss.backward()
         generator_optimizer.step()
 
-        # add .detach() here think about this
         discriminator_loss = loss(discriminator_out, generated_data.detach())
         discriminator_loss.backward()
         discriminator_optimizer.step()
