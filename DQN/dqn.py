@@ -10,17 +10,14 @@ except:
 from stable_baselines3 import DQN
 
 env = RNGEnv()
+print(env.action_space)
 
 model = DQN('MlpPolicy', env, verbose=1)
 
-obs = env.reset()
-for i in range(50):
-    for i in range(1000):
-        action, _state = model.predict(obs)
-        obs, reward, done, info = env.step(action)
+model.learn(total_timesteps=100_000, log_interval=4)
 
-    obs = env.reset()
-for i in range(100_000):
+obs = env.reset()
+for i in range(1000):
     action, _state = model.predict(obs, deterministic=True)
     obs, reward, done, info = env.step(action)
-env.render()
+env.save("dqn_output.txt")
