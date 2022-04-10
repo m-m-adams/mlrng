@@ -45,12 +45,13 @@ class RNGEnv(gym.Env):
 
     def learn(self):
         batch_obs = torch.tensor(np.array(self.states), dtype=torch.float)
-        batch_acts = torch.tensor(np.array(self.outputs), dtype=torch.float)
+        out = np.array(self.outputs)
+        batch_acts = torch.tensor(out, dtype=torch.float)
         for _ in range(5):
             guesses = self.network(batch_obs).squeeze()
             #print(guesses.shape, batch_acts.shape)
             loss = self.criterion(guesses, batch_acts)
-            print(f"replay loss for guesser is {loss}")
+            #print(f"replay loss for guesser is {loss}")
 
             loss.backward()
             self.actor_optim.step()
