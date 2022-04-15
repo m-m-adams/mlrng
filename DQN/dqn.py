@@ -14,10 +14,10 @@ print(env.action_space)
 
 model = DQN('MlpPolicy', env, verbose=1)
 
-model.learn(total_timesteps=500_000, log_interval=4)
+model.learn(total_timesteps=1_000_000, log_interval=4)
 
 obs = env.reset()
-for i in range(1000):
+for i in range(80_000):
     action, _state = model.predict(obs, deterministic=True)
     obs, reward, done, info = env.step(action)
 env.save("dqn_output.txt")

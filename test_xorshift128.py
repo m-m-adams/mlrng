@@ -229,7 +229,7 @@ def main(args):
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
-    best_conf = {'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
+    best_conf = {'hidden': 1697, 'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
                  'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
