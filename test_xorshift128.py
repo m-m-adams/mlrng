@@ -60,7 +60,7 @@ def gen_data(n=2_000_000):
     # generate 2 000 000 random numbers
     inputs = np.array([rng() for _ in range(n)])
     rand_bits = bit_array(inputs)
-    return strided(rand_bits, 2)
+    return strided(rand_bits, 5)
 
 
 def preprocess(raw_rng):
@@ -81,18 +81,13 @@ def preprocess(raw_rng):
 class Net(nn.Module):
     def __init__(self, hidden=1024):
         super().__init__()
-        self.rnn = torch.nn.LSTM(32, hidden)
+        self.input = torch.nn.Linear(128, hidden)
+
         self.output = torch.nn.Linear(hidden, 32)
 
     def forward(self, x):
-
-        #print(f"x is shaped as {x.shape}")
-        #print(f"x[0] is {x[0]}")
-        # print(x.shape)
-        lstm_out, _ = self.rnn(x)
-        out = torch.sigmoid(self.output(lstm_out))
-        # print(out.shape)
-        return out
+        x = F.relu(self.input(x))
+        return torch.sigmoid(self.output(x))
 
 
 def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCELoss(), progress=False):
@@ -102,8 +97,7 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
 
         # get the inputs; data is a list of [inputs, labels]
         inputs, labels = data
-        inputs, labels = inputs[:, None, :].to(
-            device), labels[:, None, :].to(device)
+        inputs, labels = inputs.to(device), labels.to(device)
 
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -113,7 +107,6 @@ def train_single_epoch(model, optimizer, loader, device, criterion=torch.nn.BCEL
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-        optimizer.zero_grad()
 
         # print statistics
         running_loss += loss.item()
@@ -151,8 +144,8 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
     test_abs = int(len(train_dataset) * 0.8)
     train_subset, val_subset = random_split(
         train_dataset, [test_abs, len(train_dataset) - test_abs])
-    train_loader = DataLoader(train_subset, batch_size=1000)
-    val_loader = DataLoader(val_subset, batch_size=1000)
+    train_loader = DataLoader(train_subset, batch_size=10000)
+    val_loader = DataLoader(val_subset, batch_size=10000)
 
     model = Net(config["hidden"]).to(device)
 
@@ -182,7 +175,6 @@ def train_tune(config, train_dataset=None, epochs=5, checkpoint_dir=None, tuning
             path = os.path.join("checkpoints", 'epoch'+str(epoch))
             print(f"finished epoch {epoch} with accuracy {accuracy}")
             torch.save((model.state_dict(), optimizer.state_dict()), path)
-    return model
 
 
 def tune_model(train_dataset):
@@ -233,12 +225,12 @@ def main(args):
     myrand = 4
     np.random.seed(myrand)
     torch.manual_seed(myrand)
-    raw_rng = gen_data(n=2_000_000)
+    raw_rng = gen_data(n=10_000_000)
 
     train_dataset, test_dataset = preprocess(raw_rng)
     test_loader = DataLoader(test_dataset, batch_size=10000)
-    best_conf = {'hidden': 1697, 'lr': 0.0007403179182602325, 'eps': 7.42273461240429e-07,
-                 'beta1': 0.8489710510926198, 'beta2': 0.9754654187931073}
+    best_conf = {'lr': 0.0009968361945817176, 'eps': 4.80867121379225e-07,
+                 'beta1': 0.8627089454715666, 'beta2': 0.947364904619059}
     if args.tune:
         print("tuning")
         best_conf = tune_model(train_dataset)
